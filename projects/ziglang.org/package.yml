@@ -1,5 +1,5 @@
 distributable:
-  url: https://github.com/ziglang/zig/archive/refs/tags/{{ version }}.tar.gz
+  url: https://ziglang.org/download/{{version}}/zig-{{version}}.tar.xz
   strip-components: 1
 
 versions:
