@@ -1,0 +1,12 @@
+diff --color -u a/build.zig b/build.zig
+--- a/build.zig	2022-12-08 19:24:40
++++ b/build.zig	2022-12-08 19:26:05
+@@ -156,6 +156,8 @@
+     exe.strip = strip;
+     exe.sanitize_thread = sanitize_thread;
+     exe.build_id = b.option(bool, "build-id", "Include a build id note") orelse false;
++    // https://github.com/ziglang/zig/issues/13388
++    exe.headerpad_max_install_names = true;
+     exe.install();
+     exe.setBuildMode(mode);
+     exe.setTarget(target);
