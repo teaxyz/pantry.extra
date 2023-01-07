@@ -9,7 +9,6 @@ build:
   dependencies:
     cmake.org: '>=2.8.12'
     llvm.org: ^15 # v0.10.0
-    tea.xyz/gx/cc: '*'
     tea.xyz/gx/make: '*'
     git-scm.org: '*'
     invisible-island.net/ncurses: 6
