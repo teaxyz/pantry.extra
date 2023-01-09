@@ -30,6 +30,8 @@ build:
 
     # FIXME: The most hack to work around macOS ENV security hitting CMake.
     ln -s $(tea --prefix)/zlib.net $(tea --prefix)/git-scm.org/
+    mkdir $(tea --prefix)/git-scm.org/gnu.org
+    ln -s $(tea --prefix)/gnu.org/gettext $(tea --prefix)/git-scm.org/gnu.org/
 
     cmake .. $ARGS
     make install
