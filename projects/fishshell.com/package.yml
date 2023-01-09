@@ -16,6 +16,7 @@ build:
     cmake.org: '>=3.5'
     freedesktop.org/pkg-config: '*'
     gnu.org/patch: '*'
+    # git-scm.org: '*'    FIXME: hacks to work around macOS DYLD security
   script: |
     # cmake looks for modules named (ncurses, curses);
     # this prepends `ncursesw` to the search set to
@@ -26,6 +27,18 @@ build:
 
     mkdir build
     cd build
+
+    # FIXME: this is needed due to macOS env security features
+    mkdir bin
+    cat <<-EOF >>bin/git
+    #!/bin/sh
+
+    export DYLD_FALLBACK_LIBRARY_PATH=$DYLD_FALLBACK_LIBRARY_PATH
+    tea -X git "\$*"
+    EOF
+    chmod 555 bin/git
+    export PATH=$PWD/bin:$PATH
+
     cmake .. $ARGS
     make install
 
