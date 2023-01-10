@@ -14,7 +14,7 @@ jobs:
           PATTERNS: projects/**/package.yml
   build:
     needs: [get-diff]
-    uses: teaxyz/pantry.core/.github/workflows/build.yml@main
+    uses: ./.github/workflows/build.yml
     with:
       projects: ${{ needs.get-diff.outputs.diff || 'zlib.net' }}
     secrets: inherit

@@ -1,0 +1,209 @@
+name: build
+
+on:
+  workflow_call:
+    inputs:
+      projects:
+        required: true
+        type: string
+
+env:
+  TEA_PANTRY_PATH: ${{ github.workspace }}/pantry
+
+jobs:
+  build:
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      matrix:
+        platform:
+          - os: macos-11
+            name: darwin+x86-64
+          - os: ubuntu-latest-8-cores
+            name: linux+x86-64
+            container:
+              image: debian:buster-slim
+          - os: [self-hosted, macOS, ARM64]
+            name: darwin+aarch64
+          - os: [self-hosted, linux, ARM64]
+            name: linux+aarch64
+    container: ${{ matrix.platform.container }}
+    steps:
+      - name: co pantry
+        uses: actions/checkout@v3
+        with:
+          path: pantry
+
+      - name: co cli
+        uses: actions/checkout@v3
+        with:
+          path: cli
+          repository: teaxyz/cli
+
+      - uses: teaxyz/setup@v0
+        id: tea
+        with:
+          # necessary because we currently require a `.git` directory
+          srcroot: /opt/tea.xyz/var/pantry
+          prefix: /opt
+
+      - name: HACKS
+        run: |
+          case ${{ matrix.platform.os }} in
+          macos-11)
+            #FIXME we need a clean install of macOS for builds
+            #TODO stop using GHA images or chroot or something
+            for x in /usr/local/*; do sudo mv $x /tmp; done
+            ;;
+          esac
+
+          ln -s $GITHUB_WORKSPACE/cli /opt/tea.xyz/var/cli
+
+          # in case this PR contains updates to the scripts
+          #TODO only do for PRs
+          if test "$GITHUB_REPOSITORY" = "teaxyz/pantry.core"; then
+            cp -rv pantry/scripts/* /opt/tea.xyz/var/pantry/scripts
+          fi
+
+      - run: /opt/tea.xyz/var/pantry/scripts/sort.ts ${{ inputs.projects }}
+        id: sorted
+
+      # running out of /opt because only pantry.core has these scripts
+      - run: /opt/tea.xyz/var/pantry/scripts/build.ts ${{ steps.sorted.outputs.pkgs }}
+        id: build
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          FORCE_UNSAFE_CONFIGURE: 1  # some configure scripts refuse to run as root
+
+      - name: delete `.la` files
+        run: find ${{ steps.tea.outputs.prefix }} -name '*.la' -delete
+
+      # cache data we'll need in the bottling job
+      - run: |
+          echo ${{ steps.build.outputs.pkgs }} >built
+          echo ${{ steps.build.outputs.relative-paths }} >relative-paths
+          echo ${{ steps.build.outputs.srcs }} >srcs
+        working-directory: ${{ steps.tea.outputs.prefix }}
+
+      # tarring ourselves ∵ GHA-artifacts (ludicrously) lose permissions
+      # /ref https://github.com/actions/upload-artifact/issues/38
+      - run:
+          tar czf $GITHUB_WORKSPACE/artifacts.tgz
+            ${{ steps.build.outputs.relative-paths }}
+            ${{ steps.build.outputs.srcs-relative-paths }}
+            built relative-paths srcs
+        working-directory: ${{ steps.tea.outputs.prefix }}
+
+      - name: upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.platform.name }}
+          path: artifacts.tgz
+          if-no-files-found: error
+
+  test:
+    needs: [build]
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      matrix:
+        platform:
+        - os: macos-11
+          name: darwin+x86-64
+        - os: ubuntu-latest
+          name: linux+x86-64
+        - os: ubuntu-latest
+          name: linux+x86-64
+          container: ghcr.io/teaxyz/infuser:slim-latest
+        - os: ubuntu-latest
+          name: linux+x86-64
+          container: debian:buster-slim
+        - os: [self-hosted, macOS, ARM64]
+          name: darwin+aarch64
+        - os: [self-hosted, linux, ARM64]
+          name: linux+aarch64
+    outputs:
+      HAS_SECRETS: ${{ secrets.AWS_S3_CACHE != '' }}
+    container: ${{ matrix.platform.container }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          path: tea.xyz/var/cli
+          repository: teaxyz/cli
+
+      - uses: actions/checkout@v3
+        with:
+          path: pantry
+
+      - uses: teaxyz/setup@v0
+        id: tea
+        with:
+          srcroot: tea.xyz/var/pantry
+          prefix: ${{ github.workspace }}
+
+      - run: |
+          # in case this PR contains updates to the scripts TODO only PRs
+          if test "$GITHUB_REPOSITORY" = "teaxyz/pantry.core"; then
+            cp -rv pantry/scripts/* $(tea --prefix)/tea.xyz/var/pantry/scripts
+          fi
+        if: ${{ matrix.platform.container != '' }}
+
+      - uses: actions/download-artifact@v3
+        with:
+          name: ${{ matrix.platform.name }}
+
+      - run: tar xzf artifacts.tgz
+
+      - run: tea.xyz/var/pantry/scripts/test.ts ${{ inputs.projects }}
+
+  stage:
+    needs: [test]
+    # this only works for PRs from our team to our repo (security! :( )
+    if: startsWith(github.ref, 'refs/pull/') && startsWith(github.repository, 'teaxyz/pantry.') && needs.test.outputs.HAS_SECRETS
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform:
+          - os: macos-11
+            name: darwin+x86-64
+          - os: ubuntu-latest
+            name: linux+x86-64
+          - os: [self-hosted, macOS, ARM64]
+            name: darwin+aarch64
+          - os: [self-hosted, linux, ARM64]
+            name: linux+aarch64
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          path: tea.xyz/var/cli
+          repository: teaxyz/cli
+
+      - uses: actions/checkout@v3
+        with:
+          path: pantry
+
+      - uses: teaxyz/setup@v0
+        id: tea
+        with:
+          srcroot: tea.xyz/var/pantry
+          prefix: ${{ github.workspace }}
+
+      - run: |
+          # in case this PR contains updates to the scripts
+          #TODO only do for PRs
+          if test "$GITHUB_REPOSITORY" = "teaxyz/pantry.core"; then
+            cp -rv $GITHUB_WORKSPACE/pantry/scripts/* $(tea --prefix)/tea.xyz/var/pantry/scripts
+          fi
+
+      - uses: actions/download-artifact@v3
+        with:
+          name: ${{ matrix.platform.name }}
+
+      - run:
+          tea.xyz/var/pantry/scripts/cache-artifacts.ts
+            ${{github.repository}}
+            ${{github.ref}}
+            ${{matrix.platform.name}}
+            artifacts.tgz
+        env:
+          AWS_S3_CACHE: ${{ secrets.AWS_S3_CACHE }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
