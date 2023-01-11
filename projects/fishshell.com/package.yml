@@ -16,6 +16,7 @@ build:
     cmake.org: '>=3.5'
     freedesktop.org/pkg-config: '*'
     gnu.org/patch: '*'
+    git-scm.org: '*'
   script: |
     # cmake looks for modules named (ncurses, curses);
     # this prepends `ncursesw` to the search set to
@@ -26,6 +27,12 @@ build:
 
     mkdir build
     cd build
+
+    # FIXME: The most hack to work around macOS ENV security hitting CMake.
+    ln -s $(tea --prefix)/zlib.net $(tea --prefix)/git-scm.org/
+    mkdir $(tea --prefix)/git-scm.org/gnu.org
+    ln -s $(tea --prefix)/gnu.org/gettext $(tea --prefix)/git-scm.org/gnu.org/
+
     cmake .. $ARGS
     make install
 
